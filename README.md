@@ -41,9 +41,9 @@ llm-pi-ai:
 
 ## What you should know
 
-- It is process-wide. Every `fetch` in the dsh host (model calls, web search, HTTP MCP servers, cloud providers) gets the same longer limits. A genuinely dead connection therefore takes up to the configured time to be noticed. Reasonable on a single-user machine; think twice on a shared host.
+- It is process-wide. Every `fetch` that uses Node's global dispatcher (model calls, web search, HTTP MCP servers, cloud providers) gets the same longer limits; `web_fetch` is not affected because it builds its own per-request agent. A genuinely dead connection therefore takes up to the configured time to be noticed, and once you have raised `streamIdleTimeoutMs` as well, dsh's idle watchdog is the only remaining backstop for a hung model server. Reasonable on a single-user machine; think twice on a shared host.
 - It works by installing an `undici` `Agent` as Node's global fetch dispatcher. If `NODE_USE_ENV_PROXY` is set it installs undici's proxy-aware agent instead, so `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` keep working. Tested on Node 22 with undici 8 (undici 8 requires Node 22.19 or newer). Confirmed by a user on Windows with Ollama on a 20 minute file write (discussion #4518).
-- Loading the plugin's `undici` dependency already swaps Node's default dispatcher for undici's own (same 300 second defaults); the plugin then applies your timeouts. Unloading the plugin returns to undici's default, not to Node's original object.
+- Loading the plugin's `undici` dependency already swaps Node's default dispatcher for undici's own (same 300 second defaults); the plugin then applies your timeouts. undici only installs its default when no global dispatcher exists yet, so another plugin loading undici later cannot replace the plugin's agent. Unloading the plugin returns to undici's default, not to Node's original object.
 - It is a stopgap. When dsh exposes these timeouts itself (its pi-ai dependency already accepts a custom `fetch`), this plugin becomes unnecessary.
 
 ## License
