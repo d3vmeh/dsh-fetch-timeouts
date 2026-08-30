@@ -1,0 +1,11 @@
+# Bundle layer for dsh-fetch-timeouts: raises Node's HTTP timeouts for the whole
+# dsh process (default 30 minutes each). Override from your profile's
+# cordis.patch.yml:
+#
+# - id: fetch-timeouts
+#   config:
+#     headersTimeoutMs: 3600000
+#     bodyTimeoutMs: 3600000
+- insert:
+    - id: fetch-timeouts
+      name: dsh-fetch-timeouts

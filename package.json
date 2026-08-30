@@ -1,0 +1,46 @@
+{
+  "name": "dsh-fetch-timeouts",
+  "version": "0.1.0",
+  "description": "Raise Node's HTTP timeouts for the whole DeepSeek Harness process so slow local models are not cut off at 5 minutes",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "ollama",
+    "undici",
+    "timeout"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/d3vmeh/dsh-fetch-timeouts.git"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "undici": "^8.10.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
