@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import http from 'node:http'
-import { getGlobalDispatcher, setGlobalDispatcher } from 'undici'
-import { Agent, EnvHttpProxyAgent } from 'undici'
-import { Config, apply, dispatcherClass } from '../src/index.js'
+import { Agent, EnvHttpProxyAgent, Pool, ProxyAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici'
+import { Config, apply, envProxyAgent, withTimeouts } from '../src/index.js'
 
 function fakeCtx() {
   const disposers = []
@@ -89,9 +88,69 @@ describe('apply', () => {
     } finally { server.close(); b.dispose() }
   })
 
-  it('uses the env proxy agent only when NODE_USE_ENV_PROXY is set', () => {
-    expect(dispatcherClass({})).toBe(Agent)
-    expect(dispatcherClass({ NODE_USE_ENV_PROXY: '1' })).toBe(EnvHttpProxyAgent)
+  it('builds its own env proxy agent only when NODE_USE_ENV_PROXY is set', async () => {
+    expect(envProxyAgent({})).toBeUndefined()
+    const agent = envProxyAgent({ NODE_USE_ENV_PROXY: '1' }, {})
+    expect(agent).toBeInstanceOf(EnvHttpProxyAgent)
+    await agent.close()
+  })
+
+  it('keeps a dispatcher installed before it, such as the dsh proxy router, and adds the timeouts', async () => {
+    const origins = []
+    // Shaped like dsh 0.2's proxy policy dispatcher: an Agent whose factory picks the route per origin.
+    const router = new Agent({ factory: (origin, options) => { origins.push(String(origin)); return new Pool(origin, options) } })
+    setGlobalDispatcher(router)
+    const server = http.createServer(() => {}).listen(0)   // never answers
+    try {
+      const { ctx, dispose } = fakeCtx()
+      apply(ctx, { headersTimeoutMs: 800, bodyTimeoutMs: 800 })
+      const error = await fetch(`http://127.0.0.1:${server.address().port}/`).catch((e) => e)
+      expect(error.cause?.code).toBe('UND_ERR_HEADERS_TIMEOUT')
+      expect(origins).toEqual([`http://127.0.0.1:${server.address().port}`])
+      dispose()
+      expect(getGlobalDispatcher()).toBe(router)
+      expect(router.closed).toBe(false)
+    } finally {
+      server.close()
+      await router.close()
+    }
+  })
+
+  it('applies the timeouts through a proxy agent', async () => {
+    const proxied = []
+    // undici sends plain-http requests to the proxy in absolute form; forward them to the target.
+    const proxy = http.createServer((req, res) => {
+      proxied.push(req.url)
+      req.pipe(http.request(req.url, { method: req.method, headers: req.headers }, (up) => {
+        res.writeHead(up.statusCode, up.headers); up.pipe(res)
+      }).on('error', () => res.destroy()))
+    }).listen(0)
+    const server = http.createServer(() => {}).listen(0)   // never answers
+    const viaProxy = new ProxyAgent({ uri: `http://127.0.0.1:${proxy.address().port}` })
+    try {
+      const t = Date.now()
+      const error = await withTimeouts(viaProxy, 800, 800)
+        .request({ origin: `http://127.0.0.1:${server.address().port}`, path: '/', method: 'GET' }).catch((e) => e)
+      expect(error.code).toBe('UND_ERR_HEADERS_TIMEOUT')
+      expect(Date.now() - t).toBeLessThan(5000)
+      expect(proxied).toEqual([`http://127.0.0.1:${server.address().port}/`])
+    } finally {
+      await viaProxy.close()
+      server.closeAllConnections(); server.close()
+      proxy.closeAllConnections(); proxy.close()
+    }
+  })
+
+  it('fills only the timeouts a request leaves unset', () => {
+    const seen = []
+    const inner = { dispatch: (opts) => { seen.push(opts); return true } }
+    const outer = withTimeouts(inner, 1000, 2000)
+    outer.dispatch({ path: '/' }, {})
+    outer.dispatch({ path: '/', headersTimeout: 5, bodyTimeout: undefined }, {})
+    expect(seen).toEqual([
+      { path: '/', headersTimeout: 1000, bodyTimeout: 2000 },
+      { path: '/', headersTimeout: 5, bodyTimeout: 2000 },
+    ])
   })
 
   it('tolerates a null config', () => {

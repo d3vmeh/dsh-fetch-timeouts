@@ -1,6 +1,6 @@
 {
   "name": "dsh-fetch-timeouts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Raise Node's HTTP timeouts for the whole DeepSeek Harness process so slow local models are not cut off at 5 minutes",
   "license": "MIT",
   "type": "module",
